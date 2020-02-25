@@ -649,17 +649,13 @@ class Parsers:
 		Returns:
 			dataframe (pd.DataFrame): pd.DataFrame(columns=['rsmi', 'ID', 'classification_id', 'classification'])
 		"""
-		df = pd.read_csv(data, index_col=0, header=None, names=['rsmi', 'patent_id', 'para_num', 'year', 'classification', 'text_yield', 'calc_yield'], sep=';', engine='python')
-		USPTO_data = pd.DataFrame(columns=['rsmi', 'ID', 'classification_id', 'classification'])
-		for index, row in df.iterrows():
-			try:
-				ID = str(row['patent_id']) + ";" + str(row['para_num']) + ";" + str(row['year'])
-				#print(row['rsmi'])
-				if len(row['rsmi'].split()) == 0:
-					continue
-				line = [row['rsmi'].split()[0], ID, float('nan'), row['classification']]
-				df2 = pd.DataFrame([line], columns=['rsmi', 'ID', 'classification_id', 'classification'])
-				USPTO_data = USPTO_data.append(df2, sort = False)
-			except:
-				continue
-		return USPTO_data
+		df = pd.read_csv(data, index_col=None, header=None,
+                         names=['rsmi', 'patent_id', 'para_num', 'year', 'classification', 'text_yield', 'calc_yield'],
+                         sep=';', engine='python')
+
+        	return df.apply(lambda row: pd.Series([row['rsmi'].split()[0],
+                                              str(row['patent_id']) + ";" + str(row['para_num']) + ";" + str(row['year']),
+                                              float('nan'),
+                                              row['classification']
+                                              ],
+                                             index=['rsmi', 'ID', 'classification_id', 'classification']), axis=1)
