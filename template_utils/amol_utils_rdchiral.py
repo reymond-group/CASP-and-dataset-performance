@@ -649,7 +649,7 @@ class Parsers:
 		Returns:
 			dataframe (pd.DataFrame): pd.DataFrame(columns=['rsmi', 'ID', 'classification_id', 'classification'])
 		"""
-		df = pd.read_csv(data, index_col=None, header=None,
+		df = pd.read_csv(data, index_col=0, header=None,
                          names=['rsmi', 'patent_id', 'para_num', 'year', 'classification', 'text_yield', 'calc_yield'],
                          sep=';', engine='python')
 
