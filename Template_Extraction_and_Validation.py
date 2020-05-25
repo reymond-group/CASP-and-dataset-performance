@@ -84,44 +84,40 @@ def process_reaction_data(datafile, results_file, radius=1):
     """
     p = Parsers()
     print('Parsing: {}'.format(datafile))
-    reaction_data = p.import_USPTO(datafile)
-    dataset = pd.DataFrame(columns=["ID", "reaction_hash", "reactants", "products", "classification", "retro_template", "template_hash", "selectivity", "outcomes"])
-    failed = []
+    reaction_data = p.import_USPTO_fast(datafile)
 
-    for index, row in reaction_data.iterrows():
-        total_reactions.increment()
-        print("Total Reaction Count: " + str(total_reactions.value()) + '\n')
+    def reaction_data_row_fn(row):
         try:
             reaction = Reaction(row["rsmi"], rid=row["ID"])
             if len(reaction.rsmi.split('>')) > 3:
-                failed.append([row["ID"], row["rsmi"], "components > 3"])
-                not_suitable.increment()
-                continue
+                return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "components > 3"], index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
             elif len(reaction.product_list) > 1:
-                failed.append([row["ID"], row["rsmi"], "products > 1"])
-                not_suitable.increment()
-                continue
+                return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "products > 1"], index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
             elif reaction.incomplete_reaction():
-                failed.append([row["ID"], row["rsmi"], "incomplete"])
-                not_suitable.increment()
-                continue
+                return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "incomplete"],
+                                 index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
             elif reaction.equivalent_reactant_product_set():
-                failed.append([row["ID"], row["rsmi"], "reactants = products"])
-                not_suitable.increment()
-                continue
+                return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "reactants = products"],
+                                 index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
             elif reaction.generate_reaction_template(radius=radius) is None:
-                failed.append([row["ID"], row["rsmi"], "template generation failure"])
                 print("template generation failure")
-                invalid_template.increment()
-                continue
+                return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "template generation failure"],
+                                 index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
             elif reaction.validate_retro_template(reaction.retro_template) is None:
-                failed.append([row["ID"], row["rsmi"], "template rdkit validation failed"])
                 print("template rdkit validation failed")
-                invalid_template.increment()
-                continue
-            elif reaction.check_retro_template_outcome(reaction.retro_template, reaction.products, save_outcome=True) != 0:
+                return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "template rdkit validation failed"],
+                                 index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
+            elif reaction.check_retro_template_outcome(reaction.retro_template, reaction.products,
+                                                       save_outcome=True) != 0:
                 outcomes = len(reaction.retro_outcomes)
-                assessment = reaction.assess_retro_template(reaction.retro_template, reaction.reactant_mol_list, reaction.retro_outcomes)
+                assessment = reaction.assess_retro_template(reaction.retro_template, reaction.reactant_mol_list,
+                                                            reaction.retro_outcomes)
                 print("assessed")
                 rinchi_hash = reaction.generate_concatenatedRInChI()
                 row_list = [row["ID"],
@@ -132,23 +128,36 @@ def process_reaction_data(datafile, results_file, radius=1):
                             reaction.retro_template,
                             reaction.hash_template(reaction.retro_template),
                             assessment,
-                            outcomes]
+                            outcomes,
+                            False,
+                            None]
 
-                processed_data = pd.DataFrame([row_list], columns=["ID", "reaction_hash", "reactants", "products", "classification", "retro_template", "template_hash", "selectivity", "outcomes"])
-                dataset = dataset.append(processed_data, sort = False)
-                total_extracted.increment()
-                sys.stdout.flush()
+                return pd.Series(row_list, index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
             else:
-                continue
+                return pd.Series([None, None, None, None, None, None, None, None, None, True, "Unknown reason"],
+                                 index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
         except Exception as e:
             print(e)
             print('Template not extracted - Reaction is not suitable for processing or invalid')
-            invalid_template.increment()
-            continue
+            return pd.Series([row["ID"], None, row["rsmi"], None, None, None, None, None, None, True, "reaction invalid"],
+                                 index=["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes", "failed", "reason"])
+
+    dataset = reaction_data.apply(reaction_data_row_fn, axis=1)
+
+    failed_df = dataset[dataset['failed']][["ID", "reactants", "reason"]].rename(columns={'reactants': 'rsmi'})
+    dataset = dataset[~dataset['failed']][["ID", "reaction_hash", "reactants", "products", "classification",
+                                                       "retro_template", "template_hash", "selectivity", "outcomes"]]
+    total_extracted = len(dataset)
+    invalid_template = len(failed_df[failed_df["reason"].isin(["template generation failure",
+                                                         "template rdkit validation failed",
+                                                         "reaction invalid"])])
+    not_suitable = total_extracted - invalid_template
 
     print('creating dataframes.....')
     sys.stdout.flush()
-    failed_df = pd.DataFrame(failed, columns=["ID", "rsmi", "reason"])
     output = dataset.drop_duplicates(subset="reaction_hash")
     print('Dataframes created.....')
     sys.stdout.flush()
@@ -158,13 +167,13 @@ def process_reaction_data(datafile, results_file, radius=1):
     ctr = 0
     print('Writing {}'.format(datafile))
     print('Attempting write {}'.format(ctr))
-    print("Total Reaction Count: " + str(total_reactions.value()) + '\n')
-    print("Total Reactions Extracted: " + str(total_extracted.value()) + '\n')
-    print("Reaction is not suitable for processing or invalid: " + str(not_suitable.value()) + '\n')
-    print("Template Validation Failure: " + str(invalid_template.value()) + '\n')
+    print("Total Reaction Count: " + str(total_reactions) + '\n')
+    print("Total Reactions Extracted: " + str(total_extracted) + '\n')
+    print("Reaction is not suitable for processing or invalid: " + str(not_suitable) + '\n')
+    print("Template Validation Failure: " + str(invalid_template) + '\n')
     sys.stdout.flush()
     while ctr < attempts:
-        ctr +=1
+        ctr += 1
         try:
             # attempt to write
             print('Writing')
@@ -176,8 +185,8 @@ def process_reaction_data(datafile, results_file, radius=1):
             w = True
             break
         except:
-            print('Sleeping {}'.format(ctr-1))
-            time.sleep(float('.{}'.format(random.randint(1,1000))))
+            print('Sleeping {}'.format(ctr - 1))
+            time.sleep(float('.{}'.format(random.randint(1, 1000))))
 
     if not w:
         sys.stdout.flush()
@@ -185,7 +194,7 @@ def process_reaction_data(datafile, results_file, radius=1):
         output.to_csv(results_file + '_error.csv', mode='a', header=False)
         failed_df.to_csv(results_file + '_failed_error.csv', mode='a', header=False)
         os.remove(datafile)
-    
+
     sys.stdout.flush()
 
 if __name__ == '__main__':
