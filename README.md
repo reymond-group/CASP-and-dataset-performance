@@ -5,6 +5,10 @@ https://pubs.rsc.org/en/content/articlelanding/2019/sc/c9sc04944d#!divAbstract
 
 The code released is that used in the above publication, and is an alpha version. 
 
+**We have now refactored and released the AiZynthfinder package which supercedes this repository for running searches for synthetic routes. Templates are still extracted as per the code found in this repository and RDChiral.**
+AiZynthfinder:
+https://github.com/MolecularAI/aizynthfinder
+
 ## Install conda environment
 
 The conda enivronment casp_env is available to install from a .yml or .txt requirements file
