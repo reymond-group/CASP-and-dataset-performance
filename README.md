@@ -13,6 +13,8 @@ https://github.com/MolecularAI/aizynthfinder
 
 The conda enivronment casp_env is available to install from a .yml or .txt requirements file
 
+**Note:** The environment file contains the 2018 rdkit version. Installing the 2020 version of rdkit and rdchiral should not lead to breaking changes. Please raise an issue if you notice any. 
+
 `conda create -f casp_env.yml`
 
 or 
